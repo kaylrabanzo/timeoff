@@ -138,7 +138,7 @@ export const isProduction = () => env.NODE_ENV === 'production'
 export const isTest = () => env.NODE_ENV === 'test'
 
 /**
- * Safe logger that only logs in development
+ * Safe logger that logs in development and errors in production
  */
 export const devLog = {
   info: (...args: any[]) => {
@@ -152,8 +152,7 @@ export const devLog = {
     }
   },
   error: (...args: any[]) => {
-    if (isDevelopment()) {
-      console.error('[DEV]', ...args)
-    }
+    // Always log errors, even in production, for debugging
+    console.error(isProduction() ? '[PROD ERROR]' : '[DEV]', ...args)
   }
 }
