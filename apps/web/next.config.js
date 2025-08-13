@@ -10,6 +10,13 @@ const nextConfig = {
   },
   // Enable standalone output for Docker
   output: 'standalone',
+  // Add experimental features to handle SSR better
+  experimental: {
+    serverComponentsExternalPackages: ['@tanstack/react-query'],
+  },
+  // Disable static optimization temporarily to fix deployment
+  trailingSlash: false,
+  skipTrailingSlashRedirect: true,
 }
 
 module.exports = nextConfig 

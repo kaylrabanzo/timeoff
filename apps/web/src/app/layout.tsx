@@ -14,8 +14,12 @@ export const metadata: Metadata = {
   description: 'Comprehensive timeoff management system for modern organizations',
   keywords: ['timeoff', 'leave management', 'hr', 'employee management'],
   authors: [{ name: 'Timeoff Team' }],
-  viewport: 'width=device-width, initial-scale=1',
   robots: 'index, follow',
+}
+
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
 }
 
 export default function RootLayout({
