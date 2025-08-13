@@ -42,9 +42,10 @@ export function Navigation() {
             
             {session && (
               <div className="flex items-center space-x-2">
+                {/* Check if pathname has dashboard word */}
                 <Link href="/dashboard">
                   <Button 
-                    variant={pathname === '/dashboard' ? 'default' : 'ghost'}
+                    variant={pathname.includes('dashboard') ? 'default' : 'ghost'}
                     size="sm"
                     className="flex items-center gap-2"
                   >
