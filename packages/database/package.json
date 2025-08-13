@@ -1,0 +1,24 @@
+{
+  "name": "@timeoff/database",
+  "version": "1.0.0",
+  "description": "Database utilities and Supabase integration for the Timeoff Management System",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit",
+    "generate-types": "supabase gen types typescript --project-id $SUPABASE_PROJECT_ID > src/types.ts",
+    "migrate": "node ../../scripts/run-migration.js && npm run generate-types"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.38.0"
+  },
+  "peerDependencies": {
+    "@timeoff/types": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  }
+} 

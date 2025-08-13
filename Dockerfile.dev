@@ -1,0 +1,27 @@
+# Development Dockerfile
+FROM node:18-alpine
+
+# Install dependencies
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
+
+# Copy package files first for better caching
+COPY package.json package-lock.json* ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/*/package.json ./packages/*/
+
+# Install dependencies
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Create necessary directories for volume mounts
+RUN mkdir -p /app/node_modules /app/.next /app/apps/web/node_modules /app/packages/*/node_modules
+
+# Expose port
+EXPOSE 3000
+
+# Start development server with better error handling
+CMD ["npm", "run", "dev"] 
