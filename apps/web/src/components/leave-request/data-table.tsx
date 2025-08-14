@@ -31,6 +31,7 @@ import { ApproveLeaveRequestDialog } from "./approve-leave-request-dialog";
 import { EnhancedApproveDialog } from "./enhanced-approve-dialog";
 import { EnhancedRejectDialog } from "./enhanced-reject-dialog";
 import { ExportMenu } from "../shared/export-menu";
+import { ViewLeaveRequestDialog } from "../dashboard/view-leave-request-dialog";
 
 interface DataTableProps {
     data: LeaveRequest[]
@@ -75,7 +76,7 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
 
     // approve leave request
     const { mutateAsync: approveLeaveRequest, isPending: isApprovingLeaveRequest } = useMutation({
-        mutationFn: ({ id, comments }: { id: string, comments?: string }) => 
+        mutationFn: ({ id, comments }: { id: string, comments?: string }) =>
             databaseService.approveLeaveRequest(id, user.id, comments),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
@@ -90,7 +91,7 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
 
     // reject leave request
     const { mutateAsync: rejectLeaveRequest, isPending: isRejectingLeaveRequest } = useMutation({
-        mutationFn: ({ id, reason }: { id: string, reason: string }) => 
+        mutationFn: ({ id, reason }: { id: string, reason: string }) =>
             databaseService.rejectLeaveRequest(id, user.id, reason),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
@@ -105,11 +106,11 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
 
     // bulk operations
     const { mutateAsync: bulkApprove, isPending: isBulkApproving } = useMutation({
-        mutationFn: (ids: string[]) => 
-            databaseService.bulkUpdateLeaveRequests(ids, { 
-                status: 'approved', 
-                approver_id: user.id, 
-                approved_at: new Date() 
+        mutationFn: (ids: string[]) =>
+            databaseService.bulkUpdateLeaveRequests(ids, {
+                status: 'approved',
+                approver_id: user.id,
+                approved_at: new Date()
             }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
@@ -124,11 +125,11 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
     })
 
     const { mutateAsync: bulkReject, isPending: isBulkRejecting } = useMutation({
-        mutationFn: (ids: string[]) => 
-            databaseService.bulkUpdateLeaveRequests(ids, { 
-                status: 'rejected', 
-                approver_id: user.id, 
-                rejected_at: new Date() 
+        mutationFn: (ids: string[]) =>
+            databaseService.bulkUpdateLeaveRequests(ids, {
+                status: 'rejected',
+                approver_id: user.id,
+                rejected_at: new Date()
             }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
@@ -244,8 +245,8 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                         console.log(request)
                         return (
                             <div className="font-medium">
-                                {request.users ? 
-                                    `${request.users.first_name} ${request.users.last_name}` : 
+                                {request.users ?
+                                    `${request.users.first_name} ${request.users.last_name}` :
                                     (getValue() === user?.id ? 'You' : getValue())
                                 }
                             </div>
@@ -276,71 +277,73 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                     </Badge>
                 ),
             }),
-        columnHelper.accessor(
-            (row) => ({ start: row.start_date, end: row.end_date }),
-            {
-                id: 'dates',
+            columnHelper.accessor(
+                (row) => ({ start: row.start_date, end: row.end_date }),
+                {
+                    id: 'dates',
+                    header: ({ column }) => (
+                        <Button
+                            variant="ghost"
+                            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                            className="h-auto p-0 font-medium"
+                        >
+                            Dates
+                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                    ),
+                    cell: ({ getValue }) => {
+                        const { start, end } = getValue()
+                        return `${new Date(start).toLocaleDateString()} - ${new Date(end).toLocaleDateString()}`
+                    },
+                    sortingFn: (rowA, rowB) => {
+                        const dateA = new Date(rowA.original.start_date).getTime()
+                        const dateB = new Date(rowB.original.start_date).getTime()
+                        return dateA - dateB
+                    },
+                }
+            ),
+            columnHelper.accessor('total_days', {
+                id: 'days',
                 header: ({ column }) => (
                     <Button
                         variant="ghost"
                         onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
                         className="h-auto p-0 font-medium"
                     >
-                        Dates
+                        Days
                         <ArrowUpDown className="ml-2 h-4 w-4" />
                     </Button>
                 ),
-                cell: ({ getValue }) => {
-                    const { start, end } = getValue()
-                    return `${new Date(start).toLocaleDateString()} - ${new Date(end).toLocaleDateString()}`
-                },
-                sortingFn: (rowA, rowB) => {
-                    const dateA = new Date(rowA.original.start_date).getTime()
-                    const dateB = new Date(rowB.original.start_date).getTime()
-                    return dateA - dateB
-                },
-            }
-        ),
-        columnHelper.accessor('total_days', {
-            id: 'days',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="h-auto p-0 font-medium"
-                >
-                    Days
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ getValue }) => getValue(),
-        }),
-        columnHelper.accessor('status', {
-            id: 'status',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="h-auto p-0 font-medium"
-                >
-                    Status
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ getValue }) => (
-                <Badge className={getStatusColor(getValue())}>
-                    <span className="capitalize">{getValue()}</span>
-                </Badge>
-            ),
-        }),
+                cell: ({ getValue }) => getValue(),
+            }),
+            columnHelper.accessor('status', {
+                id: 'status',
+                header: ({ column }) => (
+                    <Button
+                        variant="ghost"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                        className="h-auto p-0 font-medium"
+                    >
+                        Status
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                ),
+                cell: ({ getValue }) => (
+                    <Badge className={getStatusColor(getValue())}>
+                        <span className="capitalize">{getValue()}</span>
+                    </Badge>
+                ),
+            }),
             columnHelper.display({
                 id: 'actions',
                 header: 'Actions',
                 cell: ({ row }) => {
-                    const request = row.original
+                    const request = row.original as unknown as LeaveRequest & { user: User, users: User }
                     const canApprove = isManager && request.status === 'pending'
                     const canEdit = request.user_id === user?.id && request.status === 'pending'
                     const canDelete = canEdit || (isManager && request.status === 'pending')
+
+                    request.user = request.users
 
                     return (
                         <div className="flex gap-1">
@@ -362,10 +365,16 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                                     />
                                 </>
                             )}
-                            
-                            <Button variant="outline" size="sm">
-                                <Eye className="h-4 w-4" />
-                            </Button>
+
+
+                            <ViewLeaveRequestDialog
+                                trigger={
+                                    <Button variant="outline" size="sm">
+                                        <Eye className="h-4 w-4" />
+                                    </Button>
+                                }
+                                request={request as unknown as LeaveRequest & { user: User }}
+                            />
 
                             {canEdit && (
                                 <Button variant="outline" size="sm">
@@ -419,9 +428,11 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                                             <DropdownMenuSeparator />
                                         </>
                                     )}
-                                    <DropdownMenuItem>
-                                        <Eye className="mr-2 h-4 w-4" />
-                                        View Details
+                                    <DropdownMenuItem asChild>
+                                        <ViewLeaveRequestDialog
+                                            trigger={<span className="text-sm cursor-pointer">View Details</span>}
+                                            request={request as unknown as LeaveRequest & { user: User }}
+                                        />
                                     </DropdownMenuItem>
                                     {canDelete && (
                                         <>
@@ -517,7 +528,7 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <ExportMenu 
+                        <ExportMenu
                             data={filteredData}
                             filename="leave-requests"
                             includeEmployeeNames={showEmployeeColumn}

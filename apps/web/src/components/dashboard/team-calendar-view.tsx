@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useDatabaseService } from '@/providers/database-provider'
 import { LeaveRequest, LeaveType, RequestStatus, User } from '@timeoff/types'
 import { format, isSameDay, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
+import { ViewLeaveRequestDialog } from './view-leave-request-dialog'
 
 interface TeamCalendarViewProps {
   user: User
@@ -101,7 +102,7 @@ export function TeamCalendarView({ user, className }: TeamCalendarViewProps) {
     queryKey: ['teamLeaveRequests', teamMembers?.map(m => m.id)],
     queryFn: async () => {
       if (!teamMembers) return []
-      
+
       // In a real app, you'd fetch all leave requests for team members
       // For now, we'll simulate some data
       const mockRequests = [
@@ -144,8 +145,8 @@ export function TeamCalendarView({ user, className }: TeamCalendarViewProps) {
           updated_at: new Date('2024-01-10'),
           user: teamMembers[2]
         }
-      ] as (LeaveRequest & { user: User })[]
-      
+      ] as unknown as (LeaveRequest & { user: User })[]
+
       return mockRequests
     },
     enabled: !!teamMembers && (user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr')
@@ -154,7 +155,7 @@ export function TeamCalendarView({ user, className }: TeamCalendarViewProps) {
   // Filter requests based on selected filters
   const filteredRequests = useMemo(() => {
     if (!teamLeaveRequests) return []
-    
+
     return teamLeaveRequests.filter(request => {
       const statusMatch = statusFilter === 'all' || request.status === statusFilter
       const typeMatch = leaveTypeFilter === 'all' || request.leave_type === leaveTypeFilter
@@ -187,7 +188,7 @@ export function TeamCalendarView({ user, className }: TeamCalendarViewProps) {
   // Get requests for selected date
   const selectedDateRequests = useMemo(() => {
     if (!selectedDate || !filteredRequests) return []
-    
+
     return filteredRequests.filter(request => {
       const requestStart = new Date(request.start_date)
       const requestEnd = new Date(request.end_date)
@@ -301,14 +302,14 @@ export function TeamCalendarView({ user, className }: TeamCalendarViewProps) {
                 <h3 className="font-semibold text-lg mb-3">
                   {selectedDate ? format(selectedDate, 'MMMM d, yyyy') : 'Select a date'}
                 </h3>
-                
+
                 {selectedDateRequests.length === 0 ? (
                   <p className="text-gray-500 text-sm">No team leave requests for this date</p>
                 ) : (
                   <div className="space-y-3">
                     {selectedDateRequests.map((request) => (
-                      <Dialog key={request.id}>
-                        <DialogTrigger asChild>
+                      <ViewLeaveRequestDialog
+                        trigger={
                           <Button
                             variant="outline"
                             className="w-full justify-start text-left p-3 h-auto"
@@ -335,58 +336,9 @@ export function TeamCalendarView({ user, className }: TeamCalendarViewProps) {
                               {getStatusIcon(request.status as RequestStatus)}
                             </div>
                           </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-md">
-                          <DialogHeader>
-                            <DialogTitle className="flex items-center gap-2">
-                              <Avatar className="h-6 w-6">
-                                <AvatarImage src="" />
-                                <AvatarFallback>
-                                  {request.user.first_name.charAt(0)}{request.user.last_name.charAt(0)}
-                                </AvatarFallback>
-                              </Avatar>
-                              Leave Request Details
-                            </DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4">
-                            <div>
-                              <h4 className="font-medium mb-2">
-                                {request.user.first_name} {request.user.last_name}
-                              </h4>
-                              <div className="space-y-2 text-sm">
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Leave Type:</span>
-                                  <span className="capitalize">{request.leave_type.replace('_', ' ')}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Start Date:</span>
-                                  <span>{format(new Date(request.start_date), 'MMM d, yyyy')}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">End Date:</span>
-                                  <span>{format(new Date(request.end_date), 'MMM d, yyyy')}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Total Days:</span>
-                                  <span>{request.total_days}</span>
-                                </div>
-                                <div className="flex justify-between">
-                                  <span className="text-gray-600">Status:</span>
-                                  <Badge className={getStatusColor(request.status as RequestStatus)}>
-                                    {request.status}
-                                  </Badge>
-                                </div>
-                                {request.reason && (
-                                  <div>
-                                    <span className="text-gray-600 block mb-1">Reason:</span>
-                                    <p className="text-sm bg-gray-50 p-2 rounded">{request.reason}</p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                        }
+                        request={request}
+                      />
                     ))}
                   </div>
                 )}

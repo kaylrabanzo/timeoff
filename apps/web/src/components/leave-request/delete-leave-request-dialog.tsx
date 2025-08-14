@@ -56,7 +56,7 @@ export function DeleteLeaveRequestDialog({
                 onConfirm={handleDelete}
                 title="Delete Leave Request"
                 description="Are you sure you want to delete this leave request? This action cannot be undone."
-                itemName={`Leave request for ${formatDateRange(leaveRequest?.start_date, leaveRequest?.end_date)}`}
+                itemName={`Leave request for ${formatDateRange(new Date(leaveRequest?.start_date), new Date(leaveRequest?.end_date))}`}
                 isLoading={isLoading}
             />
         </>
