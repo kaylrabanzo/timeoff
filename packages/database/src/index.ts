@@ -20,8 +20,8 @@ interface LeaveRequest {
   id: string;
   user_id: string;
   leave_type: string;
-  start_date: Date;
-  end_date: Date;
+  start_date: string;
+  end_date: string;
   total_days: number;
   reason?: string;
   status: string;
@@ -30,6 +30,7 @@ interface LeaveRequest {
   approved_at?: Date;
   rejected_at?: Date;
   rejection_reason?: string;
+  approval_comments?: string;
   created_at: Date;
   updated_at: Date;
 }
@@ -239,12 +240,18 @@ export interface IDatabaseService {
   createLeaveRequest(request: Omit<LeaveRequest, 'id' | 'created_at' | 'updated_at'>): Promise<LeaveRequest>
   getLeaveRequestById(id: string): Promise<any>
   getLeaveRequestsByUser(userId: string): Promise<LeaveRequest[]>
+  getAllLeaveRequests(): Promise<LeaveRequest[]>
+  getTeamLeaveRequests(managerId: string, managerDepartment: string): Promise<LeaveRequest[]>
+  getPendingLeaveRequests(managerId?: string): Promise<LeaveRequest[]>
   updateLeaveRequest(id: string, updates: Partial<LeaveRequest>): Promise<LeaveRequest>
+  approveLeaveRequest(id: string, approverId: string, comments?: string): Promise<LeaveRequest>
+  rejectLeaveRequest(id: string, approverId: string, reason: string): Promise<LeaveRequest>
   deleteLeaveRequest(id: string): Promise<LeaveRequest>
   softDeleteLeaveRequest(id: string): Promise<LeaveRequest>
   restoreLeaveRequest(id: string): Promise<LeaveRequest>
   getActiveLeaveRequests(userId: string): Promise<LeaveRequest[]>
   cancelLeaveRequest(id: string): Promise<LeaveRequest>
+  bulkUpdateLeaveRequests(ids: string[], updates: Partial<LeaveRequest>): Promise<LeaveRequest[]>
   
   // Leave balance management
   getLeaveBalance(userId: string, year: number): Promise<LeaveBalance[]>
@@ -256,6 +263,9 @@ export interface IDatabaseService {
   // Department and team management
   getDepartments(): Promise<Department[]>
   getTeamsByDepartment(departmentId: string): Promise<Team[]>
+  getTeamMembers(managerId: string): Promise<User[]>
+  getManagerTeamStats(managerId: string): Promise<any>
+  getAllUsers(): Promise<User[]>
   
   // Notification management
   createNotification(notification: Omit<Notification, 'id' | 'created_at'>): Promise<Notification>
@@ -330,7 +340,7 @@ export class DatabaseService implements IDatabaseService {
       .from('leave_requests')
       .select(`
         *,
-        users!inner(*)
+        users!leave_requests_user_id_fkey(*)
       `)
       .eq('id', id)
       .single();
@@ -350,6 +360,53 @@ export class DatabaseService implements IDatabaseService {
     return data;
   }
 
+  async getAllLeaveRequests() {
+    const { data, error } = await this.supabaseClient
+      .from('leave_requests')
+      .select(`
+        *,
+        users!leave_requests_user_id_fkey(*)
+      `)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async getTeamLeaveRequests(managerId: string, managerDepartment: string) {
+    const { data, error } = await this.supabaseClient
+      .from('leave_requests')
+      .select(`
+        *,
+        users!leave_requests_user_id_fkey(*)
+      `)
+      .eq('users.manager_id', managerId)
+      .eq('users.is_active', true)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async getPendingLeaveRequests(managerId?: string) {
+    let query = this.supabaseClient
+      .from('leave_requests')
+      .select(`
+        *,
+        users!leave_requests_user_id_fkey(*)
+      `)
+      .eq('status', 'pending');
+
+    if (managerId) {
+      query = query.eq('users.manager_id', managerId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+
   async updateLeaveRequest(id: string, updates: Partial<LeaveRequest>) {
     const { data, error } = await this.supabaseClient
       .from('leave_requests')
@@ -359,6 +416,118 @@ export class DatabaseService implements IDatabaseService {
       .single();
     
     if (error) throw error;
+    return data;
+  }
+
+  async approveLeaveRequest(id: string, approverId: string, comments?: string) {
+    const updates: Partial<LeaveRequest> = {
+      status: 'approved',
+      approver_id: approverId,
+      approved_at: new Date(),
+      ...(comments && { approval_comments: comments })
+    };
+
+    const { data, error } = await this.supabaseClient
+      .from('leave_requests')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    // Create audit log
+    try {
+      await this.createAuditLog({
+        user_id: approverId,
+        action: 'APPROVE_LEAVE_REQUEST',
+        resource_type: 'leave_request',
+        resource_id: id,
+        details: {
+          request_id: id,
+          user_id: data.user_id,
+          comments: comments,
+          approved_at: new Date().toISOString()
+        }
+      });
+    } catch (auditError) {
+      // Don't fail the main operation if audit logging fails
+      console.error('Failed to create audit log:', auditError);
+    }
+
+    return data;
+  }
+
+  async rejectLeaveRequest(id: string, approverId: string, reason: string) {
+    const updates: Partial<LeaveRequest> = {
+      status: 'rejected',
+      approver_id: approverId,
+      rejected_at: new Date(),
+      rejection_reason: reason
+    };
+
+    const { data, error } = await this.supabaseClient
+      .from('leave_requests')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    // Create audit log
+    try {
+      await this.createAuditLog({
+        user_id: approverId,
+        action: 'REJECT_LEAVE_REQUEST',
+        resource_type: 'leave_request',
+        resource_id: id,
+        details: {
+          request_id: id,
+          user_id: data.user_id,
+          rejection_reason: reason,
+          rejected_at: new Date().toISOString()
+        }
+      });
+    } catch (auditError) {
+      console.error('Failed to create audit log:', auditError);
+    }
+
+    return data;
+  }
+
+  async bulkUpdateLeaveRequests(ids: string[], updates: Partial<LeaveRequest>) {
+    const { data, error } = await this.supabaseClient
+      .from('leave_requests')
+      .update(updates)
+      .in('id', ids)
+      .select();
+    
+    if (error) throw error;
+
+    // Create audit logs for bulk operations
+    if (updates.approver_id && (updates.status === 'approved' || updates.status === 'rejected')) {
+      const action = updates.status === 'approved' ? 'BULK_APPROVE_REQUESTS' : 'BULK_REJECT_REQUESTS';
+      
+      try {
+        await this.createAuditLog({
+          user_id: updates.approver_id,
+          action,
+          resource_type: 'leave_request',
+          resource_id: ids.join(','),
+          details: {
+            request_ids: ids,
+            status: updates.status,
+            count: ids.length,
+            bulk_operation: true,
+            timestamp: new Date().toISOString()
+          }
+        });
+      } catch (auditError) {
+        console.error('Failed to create bulk audit log:', auditError);
+      }
+    }
+
     return data;
   }
 
@@ -478,6 +647,70 @@ export class DatabaseService implements IDatabaseService {
     
     if (error) throw error;
     return data;
+  }
+
+  async getAllUsers() {
+    const { data, error } = await this.supabaseClient
+      .from('users')
+      .select('*')
+      .eq('is_active', true)
+      .order('first_name');
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async getTeamMembers(managerId: string) {
+    const { data, error } = await this.supabaseClient
+      .from('users')
+      .select('*')
+      .eq('manager_id', managerId)
+      .eq('is_active', true)
+      .order('first_name');
+    
+    if (error) throw error;
+    return data;
+  }
+
+  async getManagerTeamStats(managerId: string) {
+    // Get team members count
+    const { data: teamMembers, error: membersError } = await this.supabaseClient
+      .from('users')
+      .select('id')
+      .eq('manager_id', managerId)
+      .eq('is_active', true);
+
+    if (membersError) throw membersError;
+
+    // Get pending requests count for team
+    const { data: pendingRequests, error: pendingError } = await this.supabaseClient
+      .from('leave_requests')
+      .select('id, users!leave_requests_user_id_fkey(manager_id)')
+      .eq('status', 'pending')
+      .eq('users.manager_id', managerId);
+
+    if (pendingError) throw pendingError;
+
+    // Get approved requests this month for team
+    const currentMonth = new Date();
+    const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+    const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
+
+    const { data: monthlyApproved, error: monthlyError } = await this.supabaseClient
+      .from('leave_requests')
+      .select('id, users!leave_requests_user_id_fkey(manager_id)')
+      .eq('status', 'approved')
+      .eq('users.manager_id', managerId)
+      .gte('approved_at', startOfMonth.toISOString())
+      .lte('approved_at', endOfMonth.toISOString());
+
+    if (monthlyError) throw monthlyError;
+
+    return {
+      teamMembersCount: teamMembers?.length || 0,
+      pendingRequestsCount: pendingRequests?.length || 0,
+      monthlyApprovedCount: monthlyApproved?.length || 0
+    };
   }
 
   // Notification management

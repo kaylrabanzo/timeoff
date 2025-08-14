@@ -1,16 +1,19 @@
 import { getLeaveTypeColor, getStatusColor } from "@/lib/utils";
 import { Table, TableBody, TableHead, TableRow, TableHeader, TableCell } from "../ui/table";
 import { Button } from "../ui/button";
-import { Edit, Eye, ArrowUpDown, Search, Check, CheckCircle } from "lucide-react";
+import { Edit, Eye, ArrowUpDown, Search, Check, CheckCircle, X, Download, Filter, MoreHorizontal, Trash2 } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
-import { LeaveRequest, User } from '@timeoff/types';
+import { LeaveRequest, User, RequestStatus, LeaveType } from '@timeoff/types';
 import { useSession } from "next-auth/react";
 import { getLeaveTypeLabel } from "../shared/calendar/calendar-grid";
 import { DeleteLeaveRequestDialog } from "./delete-leave-request-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { databaseService } from "@timeoff/database";
+import { useDatabaseService } from "@/providers/database-provider";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Checkbox } from "../ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "../ui/dropdown-menu";
 import {
     useReactTable,
     getCoreRowModel,
@@ -25,16 +28,30 @@ import {
 import { useState, useMemo } from "react";
 import { ConfirmationModal } from "../shared";
 import { ApproveLeaveRequestDialog } from "./approve-leave-request-dialog";
+import { EnhancedApproveDialog } from "./enhanced-approve-dialog";
+import { EnhancedRejectDialog } from "./enhanced-reject-dialog";
+import { ExportMenu } from "../shared/export-menu";
 
-export function DataTable({ data }: { data: LeaveRequest[] }) {
+interface DataTableProps {
+    data: LeaveRequest[]
+    showEmployeeColumn?: boolean
+    showBulkActions?: boolean
+    isManager?: boolean
+}
+
+export function DataTable({ data, showEmployeeColumn = true, showBulkActions = false, isManager = false }: DataTableProps) {
     const { data: session } = useSession()
     const user = session?.user as unknown as User
     const queryClient = useQueryClient()
+    const databaseService = useDatabaseService()
 
     // TanStack Table state
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-    const [globalFilter, setGlobalFilter] = useState("");
+    const [globalFilter, setGlobalFilter] = useState("")
+    const [rowSelection, setRowSelection] = useState({})
+    const [statusFilter, setStatusFilter] = useState<string>("all")
+    const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>("all")
 
     const { mutateAsync: deleteLeaveRequest, isPending: isDeletingLeaveRequest } = useMutation({
         mutationFn: (id: string) => databaseService.deleteLeaveRequest(id),
@@ -58,18 +75,75 @@ export function DataTable({ data }: { data: LeaveRequest[] }) {
 
     // approve leave request
     const { mutateAsync: approveLeaveRequest, isPending: isApprovingLeaveRequest } = useMutation({
-        mutationFn: (id: string) => databaseService.updateLeaveRequest(id, { status: 'approved' }),
+        mutationFn: ({ id, comments }: { id: string, comments?: string }) => 
+            databaseService.approveLeaveRequest(id, user.id, comments),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
+            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
+            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+            toast.success('Leave request approved successfully')
         },
         onError: (error) => {
             toast.error('Failed to approve leave request')
         }
     })
 
+    // reject leave request
+    const { mutateAsync: rejectLeaveRequest, isPending: isRejectingLeaveRequest } = useMutation({
+        mutationFn: ({ id, reason }: { id: string, reason: string }) => 
+            databaseService.rejectLeaveRequest(id, user.id, reason),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
+            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
+            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+            toast.success('Leave request rejected')
+        },
+        onError: (error) => {
+            toast.error('Failed to reject leave request')
+        }
+    })
+
+    // bulk operations
+    const { mutateAsync: bulkApprove, isPending: isBulkApproving } = useMutation({
+        mutationFn: (ids: string[]) => 
+            databaseService.bulkUpdateLeaveRequests(ids, { 
+                status: 'approved', 
+                approver_id: user.id, 
+                approved_at: new Date() 
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
+            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
+            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+            toast.success('Selected requests approved successfully')
+            setRowSelection({})
+        },
+        onError: (error) => {
+            toast.error('Failed to approve selected requests')
+        }
+    })
+
+    const { mutateAsync: bulkReject, isPending: isBulkRejecting } = useMutation({
+        mutationFn: (ids: string[]) => 
+            databaseService.bulkUpdateLeaveRequests(ids, { 
+                status: 'rejected', 
+                approver_id: user.id, 
+                rejected_at: new Date() 
+            }),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
+            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
+            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+            toast.success('Selected requests rejected')
+            setRowSelection({})
+        },
+        onError: (error) => {
+            toast.error('Failed to reject selected requests')
+        }
+    })
+
     const handleDelete = async (id: string) => {
         try {
-            // await cancelLeaveRequest(id)
             await deleteLeaveRequest(id)
             toast.success('Leave request deleted successfully')
         } catch (error) {
@@ -78,48 +152,130 @@ export function DataTable({ data }: { data: LeaveRequest[] }) {
         }
     }
 
+    // Filter data based on filters
+    const filteredData = useMemo(() => {
+        let filtered = data
+
+        if (statusFilter !== "all") {
+            filtered = filtered.filter(item => item.status === statusFilter)
+        }
+
+        if (leaveTypeFilter !== "all") {
+            filtered = filtered.filter(item => item.leave_type === leaveTypeFilter)
+        }
+
+        return filtered
+    }, [data, statusFilter, leaveTypeFilter])
+
+    // Get selected row IDs
+    const selectedRowIds = useMemo(() => {
+        return Object.keys(rowSelection).filter(id => (rowSelection as any)[id])
+    }, [rowSelection])
+
+    // Bulk action handlers
+    const handleBulkApprove = () => {
+        if (selectedRowIds.length === 0) {
+            toast.error('Please select requests to approve')
+            return
+        }
+        bulkApprove(selectedRowIds)
+    }
+
+    const handleBulkReject = () => {
+        if (selectedRowIds.length === 0) {
+            toast.error('Please select requests to reject')
+            return
+        }
+        bulkReject(selectedRowIds)
+    }
+
+    // Export functionality is now handled by ExportMenu component
+
     // Create column helper
     const columnHelper = createColumnHelper<LeaveRequest>()
 
     // Define columns
-    const columns = useMemo(() => [
-        columnHelper.accessor('user_id', {
-            id: 'employee',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="h-auto p-0 font-medium"
-                >
-                    Employee
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ getValue }) => (
-                <div className="font-medium">
-                    {getValue() === user?.id ? 'You' : getValue()}
-                </div>
-            ),
-            filterFn: "includesString",
-        }),
-        columnHelper.accessor('leave_type', {
-            id: 'type',
-            header: ({ column }) => (
-                <Button
-                    variant="ghost"
-                    onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-                    className="h-auto p-0 font-medium"
-                >
-                    Type
-                    <ArrowUpDown className="ml-2 h-4 w-4" />
-                </Button>
-            ),
-            cell: ({ getValue }) => (
-                <Badge className={getLeaveTypeColor(getValue())}>
-                    {getLeaveTypeLabel(getValue())}
-                </Badge>
-            ),
-        }),
+    const columns = useMemo(() => {
+        const baseColumns = []
+
+        // Add selection column for bulk operations
+        if (showBulkActions && isManager) {
+            baseColumns.push(
+                columnHelper.display({
+                    id: 'select',
+                    header: ({ table }) => (
+                        <Checkbox
+                            checked={table.getIsAllPageRowsSelected()}
+                            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+                            aria-label="Select all"
+                        />
+                    ),
+                    cell: ({ row }) => (
+                        <Checkbox
+                            checked={row.getIsSelected()}
+                            onCheckedChange={(value) => row.toggleSelected(!!value)}
+                            aria-label="Select row"
+                        />
+                    ),
+                    enableSorting: false,
+                    enableHiding: false,
+                })
+            )
+        }
+
+        // Employee column (conditionally shown)
+        if (showEmployeeColumn) {
+            baseColumns.push(
+                columnHelper.accessor('user_id', {
+                    id: 'employee',
+                    header: ({ column }) => (
+                        <Button
+                            variant="ghost"
+                            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                            className="h-auto p-0 font-medium"
+                        >
+                            Employee
+                            <ArrowUpDown className="ml-2 h-4 w-4" />
+                        </Button>
+                    ),
+                    cell: ({ getValue, row }) => {
+                        const request = row.original as any
+
+                        console.log(request)
+                        return (
+                            <div className="font-medium">
+                                {request.users ? 
+                                    `${request.users.first_name} ${request.users.last_name}` : 
+                                    (getValue() === user?.id ? 'You' : getValue())
+                                }
+                            </div>
+                        )
+                    },
+                    filterFn: "includesString",
+                })
+            )
+        }
+
+        // Rest of the columns
+        baseColumns.push(
+            columnHelper.accessor('leave_type', {
+                id: 'type',
+                header: ({ column }) => (
+                    <Button
+                        variant="ghost"
+                        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+                        className="h-auto p-0 font-medium"
+                    >
+                        Type
+                        <ArrowUpDown className="ml-2 h-4 w-4" />
+                    </Button>
+                ),
+                cell: ({ getValue }) => (
+                    <Badge className={getLeaveTypeColor(getValue())}>
+                        {getLeaveTypeLabel(getValue())}
+                    </Badge>
+                ),
+            }),
         columnHelper.accessor(
             (row) => ({ start: row.start_date, end: row.end_date }),
             {
@@ -177,38 +333,124 @@ export function DataTable({ data }: { data: LeaveRequest[] }) {
                 </Badge>
             ),
         }),
-        columnHelper.display({
-            id: 'actions',
-            header: 'Actions',
-            cell: ({ row }) => (
-                <div className="flex gap-2">
-                    <ApproveLeaveRequestDialog
-                        leaveRequest={row.original}
-                        onApproveLeaveRequest={(id) => approveLeaveRequest(id.toString())}
-                        isLoading={isApprovingLeaveRequest}
-                    />
-                    <Button variant="outline" size="sm">
-                        <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm">
-                        <Edit className="h-4 w-4" />
-                    </Button>
-                    <DeleteLeaveRequestDialog
-                        leaveRequest={row.original}
-                        onDelete={handleDelete}
-                    />
-                </div>
-            ),
-        }),
-    ], [user?.id, handleDelete, columnHelper])
+            columnHelper.display({
+                id: 'actions',
+                header: 'Actions',
+                cell: ({ row }) => {
+                    const request = row.original
+                    const canApprove = isManager && request.status === 'pending'
+                    const canEdit = request.user_id === user?.id && request.status === 'pending'
+                    const canDelete = canEdit || (isManager && request.status === 'pending')
+
+                    return (
+                        <div className="flex gap-1">
+                            {canApprove && (
+                                <>
+                                    <EnhancedApproveDialog
+                                        leaveRequest={request}
+                                        onApprove={async (id, comments) => {
+                                            await approveLeaveRequest({ id, comments })
+                                        }}
+                                        isLoading={isApprovingLeaveRequest}
+                                    />
+                                    <EnhancedRejectDialog
+                                        leaveRequest={request}
+                                        onReject={async (id, reason) => {
+                                            await rejectLeaveRequest({ id, reason })
+                                        }}
+                                        isLoading={isRejectingLeaveRequest}
+                                    />
+                                </>
+                            )}
+                            
+                            <Button variant="outline" size="sm">
+                                <Eye className="h-4 w-4" />
+                            </Button>
+
+                            {canEdit && (
+                                <Button variant="outline" size="sm">
+                                    <Edit className="h-4 w-4" />
+                                </Button>
+                            )}
+
+                            {canDelete && (
+                                <DeleteLeaveRequestDialog
+                                    leaveRequest={request}
+                                    onDelete={handleDelete}
+                                />
+                            )}
+
+                            {/* More actions dropdown */}
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm">
+                                        <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                    {isManager && request.status === 'pending' && (
+                                        <>
+                                            <EnhancedApproveDialog
+                                                leaveRequest={request}
+                                                onApprove={async (id, comments) => {
+                                                    await approveLeaveRequest({ id, comments })
+                                                }}
+                                                isLoading={isApprovingLeaveRequest}
+                                                trigger={
+                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                                        <Check className="mr-2 h-4 w-4" />
+                                                        Approve
+                                                    </DropdownMenuItem>
+                                                }
+                                            />
+                                            <EnhancedRejectDialog
+                                                leaveRequest={request}
+                                                onReject={async (id, reason) => {
+                                                    await rejectLeaveRequest({ id, reason })
+                                                }}
+                                                isLoading={isRejectingLeaveRequest}
+                                                trigger={
+                                                    <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                                                        <X className="mr-2 h-4 w-4" />
+                                                        Reject
+                                                    </DropdownMenuItem>
+                                                }
+                                            />
+                                            <DropdownMenuSeparator />
+                                        </>
+                                    )}
+                                    <DropdownMenuItem>
+                                        <Eye className="mr-2 h-4 w-4" />
+                                        View Details
+                                    </DropdownMenuItem>
+                                    {canDelete && (
+                                        <>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem className="text-red-600">
+                                                <Trash2 className="mr-2 h-4 w-4" />
+                                                Delete
+                                            </DropdownMenuItem>
+                                        </>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    )
+                },
+            })
+        )
+
+        return baseColumns
+    }, [user?.id, handleDelete, columnHelper, showBulkActions, isManager, showEmployeeColumn, approveLeaveRequest, rejectLeaveRequest, isApprovingLeaveRequest, isRejectingLeaveRequest])
 
     // Create table instance
     const table = useReactTable({
-        data,
+        data: filteredData,
         columns,
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
         onGlobalFilterChange: setGlobalFilter,
+        onRowSelectionChange: setRowSelection,
         getCoreRowModel: getCoreRowModel(),
         getSortedRowModel: getSortedRowModel(),
         getFilteredRowModel: getFilteredRowModel(),
@@ -217,27 +459,107 @@ export function DataTable({ data }: { data: LeaveRequest[] }) {
             sorting,
             columnFilters,
             globalFilter,
+            rowSelection,
         },
         initialState: {
             pagination: {
                 pageSize: 10,
             },
         },
+        enableRowSelection: showBulkActions && isManager,
+        getRowId: (row) => row.id,
     })
 
     return (
         <div className="w-full">
             {/* Search and Filters */}
-            <div className="flex items-center py-4">
-                <div className="relative max-w-sm">
-                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                        placeholder="Search leave requests..."
-                        value={globalFilter ?? ""}
-                        onChange={(event) => setGlobalFilter(event.target.value)}
-                        className="pl-8"
-                    />
+            <div className="flex flex-col gap-4 py-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                        <div className="relative max-w-sm">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                            <Input
+                                placeholder="Search leave requests..."
+                                value={globalFilter ?? ""}
+                                onChange={(event) => setGlobalFilter(event.target.value)}
+                                className="pl-8"
+                            />
+                        </div>
+
+                        <Select value={statusFilter} onValueChange={setStatusFilter}>
+                            <SelectTrigger className="w-32">
+                                <SelectValue placeholder="Status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Status</SelectItem>
+                                <SelectItem value="pending">Pending</SelectItem>
+                                <SelectItem value="approved">Approved</SelectItem>
+                                <SelectItem value="rejected">Rejected</SelectItem>
+                                <SelectItem value="cancelled">Cancelled</SelectItem>
+                            </SelectContent>
+                        </Select>
+
+                        <Select value={leaveTypeFilter} onValueChange={setLeaveTypeFilter}>
+                            <SelectTrigger className="w-32">
+                                <SelectValue placeholder="Type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Types</SelectItem>
+                                <SelectItem value="vacation">Vacation</SelectItem>
+                                <SelectItem value="sick">Sick</SelectItem>
+                                <SelectItem value="personal">Personal</SelectItem>
+                                <SelectItem value="maternity">Maternity</SelectItem>
+                                <SelectItem value="paternity">Paternity</SelectItem>
+                                <SelectItem value="bereavement">Bereavement</SelectItem>
+                                <SelectItem value="unpaid">Unpaid</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <ExportMenu 
+                            data={filteredData}
+                            filename="leave-requests"
+                            includeEmployeeNames={showEmployeeColumn}
+                        />
+                    </div>
                 </div>
+
+                {/* Bulk Actions */}
+                {showBulkActions && isManager && selectedRowIds.length > 0 && (
+                    <div className="flex items-center gap-2 p-3 bg-blue-50 rounded-lg">
+                        <span className="text-sm font-medium">
+                            {selectedRowIds.length} item(s) selected
+                        </span>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleBulkApprove}
+                            disabled={isBulkApproving}
+                            className="text-green-600 hover:text-green-700"
+                        >
+                            <Check className="mr-2 h-4 w-4" />
+                            Approve Selected
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleBulkReject}
+                            disabled={isBulkRejecting}
+                            className="text-red-600 hover:text-red-700"
+                        >
+                            <X className="mr-2 h-4 w-4" />
+                            Reject Selected
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setRowSelection({})}
+                        >
+                            Clear Selection
+                        </Button>
+                    </div>
+                )}
             </div>
 
             <div className="rounded-md border">

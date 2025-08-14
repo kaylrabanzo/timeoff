@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CalendarIcon, Users, Clock, CheckCircle, XCircle, AlertCircle, User, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { databaseService } from '@timeoff/database'
+import { useDatabaseService } from '@/providers/database-provider'
 import { LeaveRequest, LeaveType, RequestStatus, User as UserType } from '@timeoff/types'
 import { format, isSameDay, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, startOfWeek, endOfWeek, isSameMonth, isToday } from 'date-fns'
 import { CalendarLegend } from '../shared/calendar/calendar-legend'
@@ -92,12 +92,16 @@ const getLeaveTypeColor = (leaveType: LeaveType) => {
 
 
 export function UnifiedCalendarView({ user, className, filterOn = true, isCalendarOnly = false, showLegend = true, legendType = 'vertical', legendPosition = 'right', previewOnDayClick = true, eventVariant = 'default', calendarVariant = 'default', cardView = true }: UnifiedCalendarViewProps) {
+  const databaseService = useDatabaseService()
+  
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date())
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all')
   const [leaveTypeFilter, setLeaveTypeFilter] = useState<LeaveType | 'all'>('all')
   const [selectedRequest, setSelectedRequest] = useState<LeaveRequest | null>(null)
   const [activeTab, setActiveTab] = useState<'personal' | 'team'>('personal')
+
+  const isManager = user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr'
 
   // Fetch user's leave requests
   const { data: personalRequests, isLoading: personalLoading } = useQuery({
@@ -121,57 +125,16 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
 
   // Fetch team leave requests (for supervisors/managers)
   const { data: teamRequests, isLoading: teamRequestsLoading } = useQuery({
-    queryKey: ['teamLeaveRequests', teamMembers?.map(m => m.id)],
-    queryFn: async () => {
-      if (!teamMembers) return []
-
-      // In a real app, you'd fetch all leave requests for team members
-      // For now, we'll simulate some data
-      const mockRequests = [
-        {
-          id: '1',
-          user_id: '1',
-          leave_type: LeaveType.VACATION,
-          start_date: new Date('2024-01-15'),
-          end_date: new Date('2024-01-19'),
-          total_days: 5,
-          reason: 'Family vacation',
-          status: RequestStatus.APPROVED,
-          created_at: new Date('2024-01-01'),
-          updated_at: new Date('2024-01-01'),
-          user: teamMembers[0]
-        },
-        {
-          id: '2',
-          user_id: '2',
-          leave_type: LeaveType.SICK,
-          start_date: new Date('2024-01-20'),
-          end_date: new Date('2024-01-22'),
-          total_days: 3,
-          reason: 'Not feeling well',
-          status: RequestStatus.PENDING,
-          created_at: new Date('2024-01-15'),
-          updated_at: new Date('2024-01-15'),
-          user: teamMembers[1]
-        },
-        {
-          id: '3',
-          user_id: '3',
-          leave_type: LeaveType.PERSONAL,
-          start_date: new Date('2024-01-25'),
-          end_date: new Date('2024-01-26'),
-          total_days: 2,
-          reason: 'Personal appointment',
-          status: RequestStatus.APPROVED,
-          created_at: new Date('2024-01-10'),
-          updated_at: new Date('2024-01-10'),
-          user: teamMembers[2]
-        }
-      ] as (LeaveRequest & { user: UserType })[]
-
-      return mockRequests
+    queryKey: ['teamLeaveRequests', user.id],
+    queryFn: () => {
+      if (user.role === 'admin' || user.role === 'hr') {
+        return databaseService.getAllLeaveRequests()
+      } else if (isManager) {
+        return databaseService.getTeamLeaveRequests(user.id, user.department)
+      }
+      return []
     },
-    enabled: !!teamMembers && (user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr')
+    enabled: isManager
   })
 
   // Filter requests based on selected filters
@@ -459,12 +422,12 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
                                             <Avatar className="h-8 w-8">
                                               <AvatarImage src="" />
                                               <AvatarFallback>
-                                                {request.user.first_name.charAt(0)}{request.user.last_name.charAt(0)}
+                                                {(request as any).users.first_name.charAt(0)}{(request as any).users.last_name.charAt(0)}
                                               </AvatarFallback>
                                             </Avatar>
                                             <div className="flex-1">
                                               <div className="font-medium">
-                                                {request.user.first_name} {request.user.last_name}
+                                                {(request as any).users.first_name} {(request as any).users.last_name}
                                               </div>
                                               <div className="text-sm text-gray-500 capitalize">
                                                 {request.leave_type.replace('_', ' ')}
@@ -483,7 +446,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
                                             <Avatar className="h-6 w-6">
                                               <AvatarImage src="" />
                                               <AvatarFallback>
-                                                {request.user.first_name.charAt(0)}{request.user.last_name.charAt(0)}
+                                                {(request as any).users.first_name.charAt(0)}{(request as any).users.last_name.charAt(0)}
                                               </AvatarFallback>
                                             </Avatar>
                                             Leave Request Details
@@ -492,7 +455,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
                                         <div className="space-y-4">
                                           <div>
                                             <h4 className="font-medium mb-2">
-                                              {request.user.first_name} {request.user.last_name}
+                                              {(request as any).users.first_name} {(request as any).users.last_name}
                                             </h4>
                                             <div className="space-y-2 text-sm">
                                               <div className="flex justify-between">

@@ -17,7 +17,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from '@/hooks/use-toast'
 import { cn } from '@/lib/utils'
-import { databaseService } from '@timeoff/database'
+import { useDatabaseService } from '@/providers/database-provider'
 import { useQuery } from '@tanstack/react-query'
 import { leaveRequestSchema, type LeaveRequestInput } from '@/lib/validation'
 
@@ -29,6 +29,7 @@ interface LeaveRequestFormProps {
 export function LeaveRequestForm({ onSubmit, isLoading = false }: LeaveRequestFormProps) {
   const { toast } = useToast()
   const [isOpen, setIsOpen] = useState(false)
+  const databaseService = useDatabaseService()
 
   const form = useForm<LeaveRequestInput>({
     resolver: zodResolver(leaveRequestSchema),

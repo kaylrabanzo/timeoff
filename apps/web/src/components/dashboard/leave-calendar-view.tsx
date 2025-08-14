@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { CalendarIcon, Filter, Eye, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import { databaseService } from '@timeoff/database'
+import { useDatabaseService } from '@/providers/database-provider'
 import { LeaveRequest, LeaveType, RequestStatus, User } from '@timeoff/types'
 import { format, isSameDay, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns'
 
@@ -75,6 +75,8 @@ const getStatusIcon = (status: RequestStatus) => {
 }
 
 export function LeaveCalendarView({ user, className }: LeaveCalendarViewProps) {
+  const databaseService = useDatabaseService()
+  
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date())
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all')

@@ -4,7 +4,7 @@ import { DashboardView } from '@/components/dashboard/dashboard-view'
 import { User } from '@timeoff/types'
 import { useSession } from 'next-auth/react'
 
-export default function DashboardPage({ params }: { params: { slug: string } }) {
+export default function DashboardPage() {
     const { data: session, status } = useSession()
 
     if (status === 'loading') {

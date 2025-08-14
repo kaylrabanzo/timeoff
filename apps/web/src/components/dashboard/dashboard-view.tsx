@@ -14,12 +14,12 @@ import { TeamAvailabilityCard } from './team-availability-card'
 import { UnifiedCalendarView } from './unified-calendar-view'
 import { LeaveRequestForm } from '../leave-request-form'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { databaseService } from '@timeoff/database'
+import { useDatabaseService } from '@/providers/database-provider'
 import { LeaveBalance, LeaveRequest, LeaveType, RequestStatus, User } from '@timeoff/types'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { CalendarLegend } from '../shared/calendar/calendar-legend'
-import { DataTable } from '../leave-request/data-table'
-import { differenceInDays, endOfDay, startOfDay } from 'date-fns'
+import { DataTable as LeaveRequestDataTable } from '../leave-request/data-table'
+import { differenceInDays, endOfDay, format, startOfDay } from 'date-fns'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 
@@ -29,6 +29,7 @@ interface DashboardViewProps {
 
 export function DashboardView({ user }: DashboardViewProps) {
   const { slug } = useParams()
+  const databaseService = useDatabaseService()
 
   const selectedTab = slug as 'overview' | 'requests' | 'calendar' || 'overview'
   const queryClient = useQueryClient()
@@ -45,6 +46,30 @@ export function DashboardView({ user }: DashboardViewProps) {
     queryFn: () => databaseService.getLeaveRequestsByUser(user.id),
   })
 
+  // Manager-specific queries
+  const isManager = user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr'
+
+  // Fetch team data for managers
+  const { data: teamRequests, isLoading: teamRequestsLoading } = useQuery({
+    queryKey: ['teamLeaveRequests', user.id],
+    queryFn: () => isManager ? databaseService.getTeamLeaveRequests(user.id, user.department) : Promise.resolve([]),
+    enabled: isManager
+  })
+
+  // Fetch team stats for managers
+  const { data: teamStats, isLoading: teamStatsLoading } = useQuery({
+    queryKey: ['teamStats', user.id],
+    queryFn: () => isManager ? databaseService.getManagerTeamStats(user.id) : Promise.resolve(null),
+    enabled: isManager
+  })
+
+  // Fetch all requests for admins/HR
+  const { data: allRequests, isLoading: allRequestsLoading } = useQuery({
+    queryKey: ['allLeaveRequests'],
+    queryFn: () => (user.role === 'admin' || user.role === 'hr') ? databaseService.getAllLeaveRequests() : Promise.resolve([]),
+    enabled: user.role === 'admin' || user.role === 'hr'
+  })
+
   // Fetch notifications
   const { data: notifications, isLoading: notificationsLoading } = useQuery({
     queryKey: ['notifications', user.id],
@@ -53,11 +78,24 @@ export function DashboardView({ user }: DashboardViewProps) {
 
   // create leave request
   const { mutateAsync: createLeaveRequest, isPending: isCreatingLeaveRequest } = useMutation({
-    mutationFn: (data: Omit<LeaveRequest, 'id' | 'created_at' | 'updated_at'>) => databaseService.createLeaveRequest(data),
+    mutationFn: async (data: Omit<LeaveRequest, 'id' | 'created_at' | 'updated_at'>) => {
+      const newRequest = await databaseService.createLeaveRequest(data)
+
+      // Auto-approve for managers if enabled (configurable)
+      if (isManager && data.status === 'pending') {
+        // Optional: Add a setting to control auto-approval for managers
+        // For now, we'll auto-approve manager's own requests
+        await databaseService.approveLeaveRequest(newRequest.id, user.id, 'Auto-approved (Manager self-leave)')
+      }
+
+      return newRequest
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leaveBalance', user.id] })
       queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
       queryClient.invalidateQueries({ queryKey: ['notifications', user.id] })
+      queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
     }
   })
 
@@ -65,11 +103,42 @@ export function DashboardView({ user }: DashboardViewProps) {
   const approvedRequests = recentRequests?.filter(req => req.status === 'approved').length || 0
   const unreadNotifications = notifications?.filter(n => !n.is_read).length || 0
 
-  const calculateTotalDays = (startDate: Date, endDate: Date) => {
-    const start = startOfDay(startDate)
-    const end = endOfDay(endDate)
-    return differenceInDays(end, start)
+  // Manager-specific stats
+  const teamPendingRequests = teamRequests?.filter(req => req.status === 'pending').length || 0
+  const teamApprovedThisMonth = teamStats?.monthlyApprovedCount || 0
+  const teamMembersCount = teamStats?.teamMembersCount || 0
+
+  // Admin/HR stats (all requests)
+  const allPendingRequests = allRequests?.filter(req => req.status === 'pending').length || 0
+  const totalRequests = allRequests?.length || 0
+
+  // Determine which data to show in requests table
+  const getRequestsData = () => {
+    if (selectedTab === 'requests') {
+      if (user.role === 'admin' || user.role === 'hr') {
+        return allRequests || []
+      } else if (isManager) {
+        return teamRequests || []
+      }
+    }
+    return recentRequests || []
   }
+
+  const requestsData = getRequestsData()
+
+
+  const calculateTotalDays = (startDate: Date, endDate: Date) => {
+    // Create new Date objects to avoid mutating the input parameters
+    const start = startOfDay(new Date(startDate))
+    const end = startOfDay(new Date(endDate))
+
+    // Add 1 to include both start and end dates (inclusive range)
+    return differenceInDays(end, start) + 1
+  }
+
+  
+  console.log(calculateTotalDays(new Date('2025-08-14'), new Date('2025-08-15')), 'calculateTotalDays')
+
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -86,13 +155,17 @@ export function DashboardView({ user }: DashboardViewProps) {
           </div>
           <LeaveRequestForm
             onSubmit={async (data) => {
-              await createLeaveRequest({
+              const newRequest = {
                 ...data,
+                start_date: format(data.start_date, 'yyyy-MM-dd'),
+                end_date: format(data.end_date, 'yyyy-MM-dd'),
                 leave_type: data.leave_type as LeaveType,
                 user_id: user.id,
                 status: RequestStatus.PENDING,
                 total_days: data.start_date && data.end_date ? calculateTotalDays(data.start_date, data.end_date) : 0,
-              })
+              }
+              console.log(newRequest, 'newRequest')
+              await createLeaveRequest(newRequest)
             }}
             isLoading={isCreatingLeaveRequest}
           />
@@ -114,45 +187,58 @@ export function DashboardView({ user }: DashboardViewProps) {
           <TabsContent value="overview" className='w-full'>
             {/* Stats Overview */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              {/* First card shows different metrics based on role */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+                  <CardTitle className="text-sm font-medium">
+                    {isManager ? 'Team Members' : 'Total Requests'}
+                  </CardTitle>
                   <FileText className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-primary">{recentRequests?.length || 0}</div>
+                  <div className="text-2xl font-bold text-primary">
+                    {isManager ? teamMembersCount : (recentRequests?.length || 0)}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    All time requests
+                    {isManager ? 'Active team members' : 'All time requests'}
                   </p>
                 </CardContent>
               </Card>
 
+              {/* Pending requests - context-aware */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Pending</CardTitle>
                   <Clock className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-yellow-600">{pendingRequests}</div>
+                  <div className="text-2xl font-bold text-yellow-600">
+                    {(user.role === 'admin' || user.role === 'hr') ? allPendingRequests :
+                      isManager ? teamPendingRequests : pendingRequests}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Awaiting approval
+                    {isManager ? 'Team requests pending' : 'Awaiting approval'}
                   </p>
                 </CardContent>
               </Card>
 
+              {/* Approved this month - context-aware */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Approved</CardTitle>
                   <TrendingUp className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-green-600">{approvedRequests}</div>
+                  <div className="text-2xl font-bold text-green-600">
+                    {isManager ? teamApprovedThisMonth : approvedRequests}
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Successfully approved
+                    {isManager ? 'Approved this month' : 'Successfully approved'}
                   </p>
                 </CardContent>
               </Card>
 
+              {/* Notifications */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Notifications</CardTitle>
@@ -208,12 +294,17 @@ export function DashboardView({ user }: DashboardViewProps) {
 
           <TabsContent value="requests" className='w-full'>
             {
-              requestsLoading ? (
+              (requestsLoading || teamRequestsLoading || allRequestsLoading) ? (
                 <div className="flex justify-center items-center h-full">
                   <Loader2 className="w-4 h-4 animate-spin" />
                 </div>
               ) : (
-                <DataTable data={recentRequests as unknown as LeaveRequest[]} />
+                <LeaveRequestDataTable
+                  data={requestsData as unknown as LeaveRequest[]}
+                  showEmployeeColumn={isManager}
+                  showBulkActions={isManager}
+                  isManager={isManager}
+                />
               )
             }
           </TabsContent>

@@ -34,8 +34,8 @@ export interface LeaveRequest {
   id: string;
   user_id: string;
   leave_type: LeaveType;
-  start_date: Date;
-  end_date: Date;
+  start_date: string;
+  end_date: string;
   total_days: number;
   reason?: string;
   status: RequestStatus;
@@ -44,6 +44,7 @@ export interface LeaveRequest {
   approved_at?: Date;
   rejected_at?: Date;
   rejection_reason?: string;
+  approval_comments?: string;
   created_at: Date;
   updated_at: Date;
 }
