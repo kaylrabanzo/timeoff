@@ -1,8 +1,5 @@
 {
-  "version": 2,
   "buildCommand": "npm install && npx turbo run build --filter=@timeoff/web...",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
   "functions": {
     "apps/web/src/app/api/**/*.ts": {
       "maxDuration": 30
