@@ -62,6 +62,10 @@ export const getLeaveTypeLabel = (leaveType: LeaveType) => {
   }
 }
 
+interface ExtendedLeaveRequest extends LeaveRequest {
+  users: UserType
+}
+
 export function CalendarGrid({
   calendarWeeks,
   currentMonth,
@@ -71,7 +75,7 @@ export function CalendarGrid({
   calendarVariant = 'default',
   eventVariant = 'default'
 }: CalendarGridProps) {
-  const renderEvent = (request: LeaveRequest, isPersonal: boolean = true, user?: UserType) => (
+  const renderEvent = (request: ExtendedLeaveRequest, isPersonal: boolean = true, user?: UserType) => (
     <div
       key={request.id}
       className={cn(
@@ -84,13 +88,13 @@ export function CalendarGrid({
         eventVariant === 'default' ? 'text-xs p-1 rounded mb-1 cursor-pointer transition-colors hover:opacity-80' : ''
       )}
       onClick={() => onRequestSelect(request)}
-      title={`${isPersonal ? 'You' : user?.first_name} - ${getLeaveTypeLabel(request.leave_type as LeaveType)} - ${request.status}`}
+      title={`${isPersonal ? 'You' : request?.users?.first_name} - ${getLeaveTypeLabel(request.leave_type as LeaveType)} - ${request.status}`}
     >
       <div className="flex items-center gap-1 justify-center">
         <div className={`w-2 h-2 rounded-full ${eventVariant === 'circle' ? '' : 'bg-white'}`} />
         {eventVariant === 'default' && <span className="truncate">
           <>
-            {isPersonal ? 'You' : user?.first_name} - {getLeaveTypeLabel(request.leave_type as LeaveType)}
+            {isPersonal ? 'You' : request?.users?.first_name} - {getLeaveTypeLabel(request.leave_type as LeaveType)}
           </>
         </span>}
       </div>
@@ -138,12 +142,12 @@ export function CalendarGrid({
               <div className="space-y-1">
                 {/* Personal Events */}
                 {dayData.personalRequests.slice(0, 2).map(request =>
-                  renderEvent(request, true)
+                  renderEvent(request as ExtendedLeaveRequest, true)
                 )}
 
                 {/* Team Events */}
                 {dayData.teamRequests.slice(0, 2).map(request =>
-                  renderEvent(request, false, request.user)
+                  renderEvent(request as unknown as ExtendedLeaveRequest, false, request.user)
                 )}
 
                 {/* More indicator */}

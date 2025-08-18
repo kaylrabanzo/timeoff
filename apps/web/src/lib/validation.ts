@@ -85,10 +85,7 @@ export const leaveRequestSchema = z.object({
   }),
   is_half_day: z.boolean().default(false),
   half_day_type: z.enum(['morning', 'afternoon']).optional(),
-  reason: z.string()
-    .min(10, 'Please provide a reason (minimum 10 characters)')
-    .max(1000, 'Reason is too long')
-    .transform(reason => reason.trim()),
+  reason: z.string().optional(),
   attachments: z.array(z.string()).optional()
 }).refine(
   (data) => data.end_date >= data.start_date,

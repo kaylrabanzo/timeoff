@@ -8,13 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { CalendarIcon, Users, Clock, CheckCircle, XCircle, AlertCircle, User, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarIcon, Users, Clock, CheckCircle, XCircle, AlertCircle, User, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useDatabaseService } from '@/providers/database-provider'
 import { LeaveRequest, LeaveType, RequestStatus, User as UserType } from '@timeoff/types'
 import { format, isSameDay, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths, startOfWeek, endOfWeek, isSameMonth, isToday } from 'date-fns'
 import { CalendarLegend } from '../shared/calendar/calendar-legend'
 import { CalendarGrid } from '../shared/calendar/calendar-grid'
+import { Skeleton } from '../ui/skeleton'
 
 interface UnifiedCalendarViewProps {
   user: UserType
@@ -93,7 +94,7 @@ const getLeaveTypeColor = (leaveType: LeaveType) => {
 
 export function UnifiedCalendarView({ user, className, filterOn = true, isCalendarOnly = false, showLegend = true, legendType = 'vertical', legendPosition = 'right', previewOnDayClick = true, eventVariant = 'default', calendarVariant = 'default', cardView = true }: UnifiedCalendarViewProps) {
   const databaseService = useDatabaseService()
-  
+
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date())
   const [currentMonth, setCurrentMonth] = useState<Date>(new Date())
   const [statusFilter, setStatusFilter] = useState<RequestStatus | 'all'>('all')
@@ -137,6 +138,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
     enabled: isManager
   })
 
+
   // Filter requests based on selected filters
   const filteredPersonalRequests = useMemo(() => {
     if (!personalRequests) return []
@@ -152,6 +154,8 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
       return statusMatch && typeMatch
     })
   }, [personalRequests, statusFilter, leaveTypeFilter])
+
+
 
   const filteredTeamRequests = useMemo(() => {
     if (!teamRequests) return []
@@ -179,14 +183,19 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
         const personalDayRequests = filteredPersonalRequests.filter(request => {
           const requestStart = new Date(request.start_date)
           const requestEnd = new Date(request.end_date)
-          return isWithinInterval(date, { start: requestStart, end: requestEnd })
+          return isSameDay(date, requestStart) || isWithinInterval(date, { start: requestStart, end: requestEnd })
         })
 
-        const teamDayRequests = filteredTeamRequests.filter(request => {
+        let teamDayRequests = filteredTeamRequests.filter(request => {
           const requestStart = new Date(request.start_date)
           const requestEnd = new Date(request.end_date)
-          return isWithinInterval(date, { start: requestStart, end: requestEnd })
+          return isSameDay(date, requestStart) || isWithinInterval(date, { start: requestStart, end: requestEnd })
         })
+
+        // if manager, remove personal requests in teamdayrequests
+        if (isManager) {
+          teamDayRequests = teamDayRequests.filter(request => request.user_id !== user.id)
+        }
 
         return {
           date,
@@ -204,24 +213,47 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
     return filteredPersonalRequests.filter(request => {
       const requestStart = new Date(request.start_date)
       const requestEnd = new Date(request.end_date)
-      return isWithinInterval(selectedDate, { start: requestStart, end: requestEnd })
+
+      return isSameDay(selectedDate, requestStart) || isWithinInterval(selectedDate, { start: requestStart, end: requestEnd })
     })
+
   }, [selectedDate, filteredPersonalRequests])
+
 
   const selectedDateTeamRequests = useMemo(() => {
     if (!selectedDate || !filteredTeamRequests) return []
 
-    return filteredTeamRequests.filter(request => {
+    let teamRequests = filteredTeamRequests.filter(request => {
       const requestStart = new Date(request.start_date)
       const requestEnd = new Date(request.end_date)
-      return isWithinInterval(selectedDate, { start: requestStart, end: requestEnd })
+
+      return isSameDay(selectedDate, requestStart) || isWithinInterval(selectedDate, { start: requestStart, end: requestEnd })
     })
-  }, [selectedDate, filteredTeamRequests])
+
+    // if manager, remove personal requests in teamdayrequests
+    if (isManager) {
+      teamRequests = teamRequests.filter(request => request.user_id !== user.id)
+    }
+
+    return teamRequests
+  }, [selectedDate, filteredTeamRequests, isManager, user])
 
   const canViewTeamCalendar = user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr'
 
+  if (personalLoading || teamLoading || teamRequestsLoading) {
+    return <div className='flex flex-col gap-2'>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div key={i} className="flex items-center flex-col gap-2 w-full">
+          <Skeleton className="h-10 w-full" />
+        </div>
+      ))}
+    </div>
+
+  }
 
 
+  console.log(filteredPersonalRequests)
+  console.log(filteredTeamRequests)
   return (
     <div className={className}>
       <Card className={`${!cardView ? 'border-none shadow-none p-0' : ''}`}>
@@ -422,12 +454,12 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
                                             <Avatar className="h-8 w-8">
                                               <AvatarImage src="" />
                                               <AvatarFallback>
-                                                {(request as any).users.first_name.charAt(0)}{(request as any).users.last_name.charAt(0)}
+                                                {(request as any)?.users?.first_name?.charAt(0)}{(request as any)?.users?.last_name?.charAt(0)}
                                               </AvatarFallback>
                                             </Avatar>
                                             <div className="flex-1">
                                               <div className="font-medium">
-                                                {(request as any).users.first_name} {(request as any).users.last_name}
+                                                {(request as any)?.users?.first_name} {(request as any)?.users?.last_name}
                                               </div>
                                               <div className="text-sm text-gray-500 capitalize">
                                                 {request.leave_type.replace('_', ' ')}
@@ -446,7 +478,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
                                             <Avatar className="h-6 w-6">
                                               <AvatarImage src="" />
                                               <AvatarFallback>
-                                                {(request as any).users.first_name.charAt(0)}{(request as any).users.last_name.charAt(0)}
+                                                {(request as any)?.users?.first_name?.charAt(0)}{(request as any)?.users?.last_name?.charAt(0)}
                                               </AvatarFallback>
                                             </Avatar>
                                             Leave Request Details
@@ -455,7 +487,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
                                         <div className="space-y-4">
                                           <div>
                                             <h4 className="font-medium mb-2">
-                                              {(request as any).users.first_name} {(request as any).users.last_name}
+                                              {(request as any)?.users?.first_name} {(request as any)?.users?.last_name}
                                             </h4>
                                             <div className="space-y-2 text-sm">
                                               <div className="flex justify-between">

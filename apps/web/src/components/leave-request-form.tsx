@@ -256,7 +256,7 @@ export function LeaveRequestForm({ onSubmit, isLoading = false }: LeaveRequestFo
               name="reason"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Reason for Leave *</FormLabel>
+                  <FormLabel>Reason for Leave</FormLabel>
                   <FormControl>
                     <Textarea
                       placeholder="Please provide a detailed reason for your leave request..."

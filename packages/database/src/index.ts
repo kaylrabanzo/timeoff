@@ -424,7 +424,7 @@ export class DatabaseService implements IDatabaseService {
       status: 'approved',
       approver_id: approverId,
       approved_at: new Date(),
-      ...(comments && { approval_comments: comments })
+      // ...(comments && { approval_comments: comments })
     };
 
     const { data, error } = await this.supabaseClient
@@ -446,7 +446,7 @@ export class DatabaseService implements IDatabaseService {
         details: {
           request_id: id,
           user_id: data.user_id,
-          comments: comments,
+          // comments: comments,
           approved_at: new Date().toISOString()
         }
       });

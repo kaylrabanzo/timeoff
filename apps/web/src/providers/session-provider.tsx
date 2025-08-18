@@ -2,7 +2,7 @@
 
 import { SessionProvider } from 'next-auth/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { Toaster } from 'react-hot-toast'
+// import { Toaster } from 'react-hot-toast'
 import { Toaster as Sonner } from '@/components/ui/sonner'
 import { DatabaseServiceProvider } from './database-provider'
 import { useState } from 'react'
@@ -35,7 +35,7 @@ export function ClientSessionProvider({ children }: ClientSessionProviderProps) 
                 <DatabaseServiceProvider>
                     <Navigation />
                     {children}
-                    <Toaster
+                    {/* <Toaster
                         position="top-right"
                         toastOptions={{
                             duration: 4000,
@@ -45,7 +45,8 @@ export function ClientSessionProvider({ children }: ClientSessionProviderProps) 
                                 border: '1px solid hsl(var(--border))',
                             },
                         }}
-                    />
+                    /> */}
+
                     <Sonner richColors />
                 </DatabaseServiceProvider>
             </QueryClientProvider>

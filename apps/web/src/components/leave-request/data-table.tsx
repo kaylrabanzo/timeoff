@@ -8,8 +8,6 @@ import { LeaveRequest, User, RequestStatus, LeaveType } from '@timeoff/types';
 import { useSession } from "next-auth/react";
 import { getLeaveTypeLabel } from "../shared/calendar/calendar-grid";
 import { DeleteLeaveRequestDialog } from "./delete-leave-request-dialog";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useDatabaseService } from "@/providers/database-provider";
 import { toast } from "sonner";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
 import { Checkbox } from "../ui/checkbox";
@@ -26,12 +24,11 @@ import {
     type ColumnFiltersState,
 } from "@tanstack/react-table";
 import { useState, useMemo } from "react";
-import { ConfirmationModal } from "../shared";
-import { ApproveLeaveRequestDialog } from "./approve-leave-request-dialog";
 import { EnhancedApproveDialog } from "./enhanced-approve-dialog";
 import { EnhancedRejectDialog } from "./enhanced-reject-dialog";
 import { ExportMenu } from "../shared/export-menu";
 import { ViewLeaveRequestDialog } from "../dashboard/view-leave-request-dialog";
+import { useLeaveRequestOperations } from "@/hooks/use-leave-request-operations";
 
 interface DataTableProps {
     data: LeaveRequest[]
@@ -43,103 +40,34 @@ interface DataTableProps {
 export function DataTable({ data, showEmployeeColumn = true, showBulkActions = false, isManager = false }: DataTableProps) {
     const { data: session } = useSession()
     const user = session?.user as unknown as User
-    const queryClient = useQueryClient()
-    const databaseService = useDatabaseService()
 
     // TanStack Table state
     const [sorting, setSorting] = useState<SortingState>([])
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
     const [globalFilter, setGlobalFilter] = useState("")
-    const [rowSelection, setRowSelection] = useState({})
     const [statusFilter, setStatusFilter] = useState<string>("all")
     const [leaveTypeFilter, setLeaveTypeFilter] = useState<string>("all")
 
-    const { mutateAsync: deleteLeaveRequest, isPending: isDeletingLeaveRequest } = useMutation({
-        mutationFn: (id: string) => databaseService.deleteLeaveRequest(id),
+    // Use the leave request operations hook
+    const {
+        deleteLeaveRequest,
+        cancelLeaveRequest,
+        approveLeaveRequest,
+        rejectLeaveRequest,
+        bulkApprove,
+        bulkReject,
+        isDeletingLeaveRequest,
+        isCancellingLeaveRequest,
+        isApprovingLeaveRequest,
+        isRejectingLeaveRequest,
+        isBulkApproving,
+        isBulkRejecting,
+        rowSelection,
+        setRowSelection
+    } = useLeaveRequestOperations({
+        userId: user.id,
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
-        },
-        onError: (error) => {
-            toast.error('Failed to delete leave request')
-        }
-    })
-
-    const { mutateAsync: cancelLeaveRequest, isPending: isCancellingLeaveRequest } = useMutation({
-        mutationFn: (id: string) => databaseService.cancelLeaveRequest(id),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
-        },
-        onError: (error) => {
-            toast.error('Failed to cancel leave request')
-        }
-    })
-
-    // approve leave request
-    const { mutateAsync: approveLeaveRequest, isPending: isApprovingLeaveRequest } = useMutation({
-        mutationFn: ({ id, comments }: { id: string, comments?: string }) =>
-            databaseService.approveLeaveRequest(id, user.id, comments),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
-            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
-            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
-            toast.success('Leave request approved successfully')
-        },
-        onError: (error) => {
-            toast.error('Failed to approve leave request')
-        }
-    })
-
-    // reject leave request
-    const { mutateAsync: rejectLeaveRequest, isPending: isRejectingLeaveRequest } = useMutation({
-        mutationFn: ({ id, reason }: { id: string, reason: string }) =>
-            databaseService.rejectLeaveRequest(id, user.id, reason),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
-            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
-            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
-            toast.success('Leave request rejected')
-        },
-        onError: (error) => {
-            toast.error('Failed to reject leave request')
-        }
-    })
-
-    // bulk operations
-    const { mutateAsync: bulkApprove, isPending: isBulkApproving } = useMutation({
-        mutationFn: (ids: string[]) =>
-            databaseService.bulkUpdateLeaveRequests(ids, {
-                status: 'approved',
-                approver_id: user.id,
-                approved_at: new Date()
-            }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
-            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
-            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
-            toast.success('Selected requests approved successfully')
-            setRowSelection({})
-        },
-        onError: (error) => {
-            toast.error('Failed to approve selected requests')
-        }
-    })
-
-    const { mutateAsync: bulkReject, isPending: isBulkRejecting } = useMutation({
-        mutationFn: (ids: string[]) =>
-            databaseService.bulkUpdateLeaveRequests(ids, {
-                status: 'rejected',
-                approver_id: user.id,
-                rejected_at: new Date()
-            }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['recentRequests', user.id] })
-            queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
-            queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
-            toast.success('Selected requests rejected')
-            setRowSelection({})
-        },
-        onError: (error) => {
-            toast.error('Failed to reject selected requests')
+            // Additional success handling if needed
         }
     })
 
@@ -341,7 +269,7 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                     const request = row.original as unknown as LeaveRequest & { user: User, users: User }
                     const canApprove = isManager && request.status === 'pending'
                     const canEdit = request.user_id === user?.id && request.status === 'pending'
-                    const canDelete = canEdit || (isManager && request.status === 'pending')
+                    const canDelete = isManager
 
                     request.user = request.users
 
@@ -430,7 +358,10 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
                                     )}
                                     <DropdownMenuItem asChild>
                                         <ViewLeaveRequestDialog
-                                            trigger={<span className="text-sm cursor-pointer">View Details</span>}
+                                            trigger={<div className="relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&>svg]:size-4 [&>svg]:shrink-0">
+                                                <Eye className="mr-2 h-4 w-4" />
+                                                View Details
+                                            </div>}
                                             request={request as unknown as LeaveRequest & { user: User }}
                                         />
                                     </DropdownMenuItem>
