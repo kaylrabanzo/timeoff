@@ -65,7 +65,7 @@ export function DataTable({ data, showEmployeeColumn = true, showBulkActions = f
         rowSelection,
         setRowSelection
     } = useLeaveRequestOperations({
-        userId: user.id,
+        userId: user?.id || '',
         onSuccess: () => {
             // Additional success handling if needed
         }

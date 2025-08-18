@@ -39,6 +39,8 @@ export function useLeaveRequestOperations({ userId, onSuccess }: UseLeaveRequest
       queryClient.invalidateQueries({ queryKey: ['notifications', userId] })
       queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
       queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', userId] })
+      
       onSuccess?.()
     },
     onError: (error) => {
@@ -51,6 +53,7 @@ export function useLeaveRequestOperations({ userId, onSuccess }: UseLeaveRequest
     mutationFn: (id: string) => databaseService.cancelLeaveRequest(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['recentRequests', userId] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', userId] })
       onSuccess?.()
     },
     onError: (error) => {
@@ -66,6 +69,7 @@ export function useLeaveRequestOperations({ userId, onSuccess }: UseLeaveRequest
       queryClient.invalidateQueries({ queryKey: ['recentRequests', userId] })
       queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
       queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', userId] })
       toast.success('Leave request approved successfully')
       onSuccess?.()
     },
@@ -82,6 +86,7 @@ export function useLeaveRequestOperations({ userId, onSuccess }: UseLeaveRequest
       queryClient.invalidateQueries({ queryKey: ['recentRequests', userId] })
       queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
       queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', userId] })
       toast.success('Leave request rejected')
       onSuccess?.()
     },
@@ -102,6 +107,7 @@ export function useLeaveRequestOperations({ userId, onSuccess }: UseLeaveRequest
       queryClient.invalidateQueries({ queryKey: ['recentRequests', userId] })
       queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
       queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', userId] })
       toast.success('Selected requests approved successfully')
       setRowSelection({})
       onSuccess?.()
@@ -123,6 +129,7 @@ export function useLeaveRequestOperations({ userId, onSuccess }: UseLeaveRequest
       queryClient.invalidateQueries({ queryKey: ['recentRequests', userId] })
       queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
       queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', userId] })
       toast.success('Selected requests rejected')
       setRowSelection({})
       onSuccess?.()

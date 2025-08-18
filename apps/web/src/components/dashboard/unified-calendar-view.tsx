@@ -108,21 +108,10 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
   const { data: personalRequests, isLoading: personalLoading } = useQuery({
     queryKey: ['personalLeaveRequests', user.id],
     queryFn: () => databaseService.getLeaveRequestsByUser(user.id),
+    enabled: !!user?.id
   })
 
   // Fetch team members (for supervisors/managers)
-  const { data: teamMembers, isLoading: teamLoading } = useQuery({
-    queryKey: ['teamMembers', user.id],
-    queryFn: async () => {
-      // For now, we'll simulate team members - in a real app, you'd fetch from the database
-      return [
-        { id: '1', first_name: 'John', last_name: 'Doe', email: 'john@example.com', department: 'Engineering', team: 'Frontend', role: 'employee' },
-        { id: '2', first_name: 'Jane', last_name: 'Smith', email: 'jane@example.com', department: 'Engineering', team: 'Backend', role: 'employee' },
-        { id: '3', first_name: 'Bob', last_name: 'Johnson', email: 'bob@example.com', department: 'Engineering', team: 'DevOps', role: 'employee' },
-      ] as UserType[]
-    },
-    enabled: user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr'
-  })
 
   // Fetch team leave requests (for supervisors/managers)
   const { data: teamRequests, isLoading: teamRequestsLoading } = useQuery({
@@ -135,7 +124,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
       }
       return []
     },
-    enabled: isManager
+    enabled: isManager && !!user?.id
   })
 
 
@@ -240,7 +229,7 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
 
   const canViewTeamCalendar = user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr'
 
-  if (personalLoading || teamLoading || teamRequestsLoading) {
+  if (personalLoading || teamRequestsLoading) {
     return <div className='flex flex-col gap-2'>
       {Array.from({ length: 10 }).map((_, i) => (
         <div key={i} className="flex items-center flex-col gap-2 w-full">
@@ -251,9 +240,6 @@ export function UnifiedCalendarView({ user, className, filterOn = true, isCalend
 
   }
 
-
-  console.log(filteredPersonalRequests)
-  console.log(filteredTeamRequests)
   return (
     <div className={className}>
       <Card className={`${!cardView ? 'border-none shadow-none p-0' : ''}`}>

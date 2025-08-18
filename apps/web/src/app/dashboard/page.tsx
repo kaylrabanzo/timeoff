@@ -31,5 +31,5 @@ export default function DashboardPage() {
     updated_at: new Date(), // Mock value for now
   }
 
-  return <DashboardView user={user} />
+  return <DashboardView slug={"overview"} />
 } 

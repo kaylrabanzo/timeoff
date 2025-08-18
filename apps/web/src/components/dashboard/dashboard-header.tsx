@@ -5,6 +5,7 @@ import { User } from '@timeoff/types'
 import { LeaveType, RequestStatus } from '@timeoff/types'
 import { format } from 'date-fns'
 import { DatabaseLeaveRequest } from '@/lib/type-adapters'
+import { toast } from 'sonner'
 
 interface DashboardHeaderProps {
   user: User
@@ -46,7 +47,6 @@ export function DashboardHeader({
             status: RequestStatus.PENDING,
             total_days: totalDays,
           }
-          console.log(newRequest, 'newRequest')
           await onSubmit(newRequest)
         }}
         isLoading={isLoading}

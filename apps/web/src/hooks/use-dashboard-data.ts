@@ -10,6 +10,7 @@ import {
   adaptLeaveBalances,
   adaptNotifications
 } from '@/lib/type-adapters'
+import { toast } from 'sonner'
 
 interface DashboardDataReturn {
   leaveBalance: LeaveBalance[]
@@ -54,39 +55,42 @@ export function useDashboardData(user: User): DashboardDataReturn {
   const { data: leaveBalance, isLoading: balanceLoading } = useQuery({
     queryKey: ['leaveBalance', user.id],
     queryFn: () => databaseService.getLeaveBalance(user.id, new Date().getFullYear()),
+    enabled: !!user?.id
   })
 
   // Fetch user's recent requests
   const { data: recentRequests, isLoading: requestsLoading } = useQuery({
     queryKey: ['recentRequests', user.id],
     queryFn: () => databaseService.getLeaveRequestsByUser(user.id),
+    enabled: !!user?.id
   })
 
   // Fetch team data for managers
   const { data: teamRequests, isLoading: teamRequestsLoading } = useQuery({
     queryKey: ['teamLeaveRequests', user.id],
     queryFn: () => isManager ? databaseService.getTeamLeaveRequests(user.id, user.department) : Promise.resolve([]),
-    enabled: isManager
+    enabled: isManager && !!user?.id
   })
 
   // Fetch team stats for managers
   const { data: teamStats, isLoading: teamStatsLoading } = useQuery({
     queryKey: ['teamStats', user.id],
     queryFn: () => isManager ? databaseService.getManagerTeamStats(user.id) : Promise.resolve(null),
-    enabled: isManager
+    enabled: isManager && !!user?.id
   })
 
   // Fetch all requests for admins/HR
   const { data: allRequests, isLoading: allRequestsLoading } = useQuery({
     queryKey: ['allLeaveRequests'],
     queryFn: () => isAdminOrHR ? databaseService.getAllLeaveRequests() : Promise.resolve([]),
-    enabled: isAdminOrHR
+    enabled: isAdminOrHR && !!user?.id
   })
 
   // Fetch notifications
   const { data: notifications, isLoading: notificationsLoading } = useQuery({
     queryKey: ['notifications', user.id],
     queryFn: () => databaseService.getNotificationsByUser(user.id, 5),
+    enabled: !!user?.id
   })
 
   // Create leave request mutation
@@ -109,6 +113,8 @@ export function useDashboardData(user: User): DashboardDataReturn {
       queryClient.invalidateQueries({ queryKey: ['notifications', user.id] })
       queryClient.invalidateQueries({ queryKey: ['teamLeaveRequests'] })
       queryClient.invalidateQueries({ queryKey: ['allLeaveRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['personalLeaveRequests', user.id] })
+      toast.success('Leave request submitted successfully')
     }
   })
 

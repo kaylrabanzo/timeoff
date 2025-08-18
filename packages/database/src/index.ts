@@ -1,4 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
+
+// Export the new modular structure
+export * from './modules';
+
+// Import the new modular services
+import { DatabaseServiceFactory } from './modules/database-service';
+
 // Temporary types until workspace dependencies are properly configured
 interface User {
   id: string;
@@ -229,7 +236,7 @@ export const supabase = new Proxy({} as ReturnType<typeof createClient<Database>
   }
 });
 
-// Database service interface for dependency injection
+// Database service interface for dependency injection (legacy interface)
 export interface IDatabaseService {
   // User management
   getUserById(id: string): Promise<User>
@@ -284,511 +291,153 @@ export interface IDatabaseService {
   subscribeToApprovals(approverId: string, callback: (payload: any) => void): any
 }
 
-// Database service implementation
+// Legacy Database service implementation for backward compatibility
 export class DatabaseService implements IDatabaseService {
-  constructor(private supabaseClient: typeof supabase) {}
+  private serviceFactory: DatabaseServiceFactory;
+
+  constructor(private supabaseClient: typeof supabase) {
+    this.serviceFactory = DatabaseServiceFactory.getInstance(supabaseClient);
+  }
 
   // User management
   async getUserById(id: string): Promise<User> {
-    const { data, error } = await this.supabaseClient
-      .from('users')
-      .select('*')
-      .eq('id', id)
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getUserService().getUserById(id);
   }
 
   async getUserByEmail(email: string): Promise<User> {
-    const { data, error } = await this.supabaseClient
-      .from('users')
-      .select('*')
-      .eq('email', email)
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getUserService().getUserByEmail(email);
   }
 
   async updateUser(id: string, updates: Partial<User>): Promise<User> {
-    const { data, error } = await this.supabaseClient
-      .from('users')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getUserService().updateUser(id, updates);
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return this.serviceFactory.getUserService().getAllUsers();
+  }
+
+  async getTeamMembers(managerId: string): Promise<User[]> {
+    return this.serviceFactory.getUserService().getTeamMembers(managerId);
   }
 
   // Leave request management
   async createLeaveRequest(request: Omit<LeaveRequest, 'id' | 'created_at' | 'updated_at'>): Promise<LeaveRequest> {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .insert(request)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().createLeaveRequest(request);
   }
 
   async getLeaveRequestById(id: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .select(`
-        *,
-        users!leave_requests_user_id_fkey(*)
-      `)
-      .eq('id', id)
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().getLeaveRequestById(id);
   }
 
   async getLeaveRequestsByUser(userId: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().getLeaveRequestsByUser(userId);
   }
 
   async getAllLeaveRequests() {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .select(`
-        *,
-        users!leave_requests_user_id_fkey(*)
-      `)
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().getAllLeaveRequests();
   }
 
   async getTeamLeaveRequests(managerId: string, managerDepartment: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .select(`
-        *,
-        users!leave_requests_user_id_fkey(*)
-      `)
-      .eq('users.manager_id', managerId)
-      .eq('users.is_active', true)
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().getTeamLeaveRequests(managerId);
   }
 
   async getPendingLeaveRequests(managerId?: string) {
-    let query = this.supabaseClient
-      .from('leave_requests')
-      .select(`
-        *,
-        users!leave_requests_user_id_fkey(*)
-      `)
-      .eq('status', 'pending');
-
-    if (managerId) {
-      query = query.eq('users.manager_id', managerId);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().getPendingLeaveRequests(managerId);
   }
 
   async updateLeaveRequest(id: string, updates: Partial<LeaveRequest>) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().updateLeaveRequest(id, updates);
   }
 
   async approveLeaveRequest(id: string, approverId: string, comments?: string) {
-    const updates: Partial<LeaveRequest> = {
-      status: 'approved',
+    return this.serviceFactory.getLeaveRequestService().approveLeaveRequest(id, approverId, {
       approver_id: approverId,
-      approved_at: new Date(),
-      // ...(comments && { approval_comments: comments })
-    };
-
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-
-    // Create audit log
-    try {
-      await this.createAuditLog({
-        user_id: approverId,
-        action: 'APPROVE_LEAVE_REQUEST',
-        resource_type: 'leave_request',
-        resource_id: id,
-        details: {
-          request_id: id,
-          user_id: data.user_id,
-          // comments: comments,
-          approved_at: new Date().toISOString()
-        }
-      });
-    } catch (auditError) {
-      // Don't fail the main operation if audit logging fails
-      console.error('Failed to create audit log:', auditError);
-    }
-
-    return data;
+      comments
+    });
   }
 
   async rejectLeaveRequest(id: string, approverId: string, reason: string) {
-    const updates: Partial<LeaveRequest> = {
-      status: 'rejected',
+    return this.serviceFactory.getLeaveRequestService().rejectLeaveRequest(id, approverId, {
       approver_id: approverId,
-      rejected_at: new Date(),
       rejection_reason: reason
-    };
-
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-
-    // Create audit log
-    try {
-      await this.createAuditLog({
-        user_id: approverId,
-        action: 'REJECT_LEAVE_REQUEST',
-        resource_type: 'leave_request',
-        resource_id: id,
-        details: {
-          request_id: id,
-          user_id: data.user_id,
-          rejection_reason: reason,
-          rejected_at: new Date().toISOString()
-        }
-      });
-    } catch (auditError) {
-      console.error('Failed to create audit log:', auditError);
-    }
-
-    return data;
-  }
-
-  async bulkUpdateLeaveRequests(ids: string[], updates: Partial<LeaveRequest>) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update(updates)
-      .in('id', ids)
-      .select();
-    
-    if (error) throw error;
-
-    // Create audit logs for bulk operations
-    if (updates.approver_id && (updates.status === 'approved' || updates.status === 'rejected')) {
-      const action = updates.status === 'approved' ? 'BULK_APPROVE_REQUESTS' : 'BULK_REJECT_REQUESTS';
-      
-      try {
-        await this.createAuditLog({
-          user_id: updates.approver_id,
-          action,
-          resource_type: 'leave_request',
-          resource_id: ids.join(','),
-          details: {
-            request_ids: ids,
-            status: updates.status,
-            count: ids.length,
-            bulk_operation: true,
-            timestamp: new Date().toISOString()
-          }
-        });
-      } catch (auditError) {
-        console.error('Failed to create bulk audit log:', auditError);
-      }
-    }
-
-    return data;
+    });
   }
 
   async deleteLeaveRequest(id: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .delete()
-      .eq('id', id)
-      .select()
-      .single();
-      
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().softDeleteLeaveRequest(id);
   }
 
-  // Soft delete methods
   async softDeleteLeaveRequest(id: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single();
-      
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().softDeleteLeaveRequest(id);
   }
 
   async restoreLeaveRequest(id: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update({ deleted_at: null })
-      .eq('id', id)
-      .select()
-      .single();
-      
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().restoreLeaveRequest(id);
   }
 
   async getActiveLeaveRequests(userId: string) {
-    const { data, error } = await this.supabaseClient
-      .from('active_leave_requests') // Query the view instead of table
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveRequestService().getActiveLeaveRequests(userId);
   }
 
   async cancelLeaveRequest(id: string) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_requests')
-      .update({ status: 'cancelled' })
-      .eq('id', id)
-      .select()
-      .single();  
+    return this.serviceFactory.getLeaveRequestService().cancelLeaveRequest(id);
+  }
 
-    if (error) throw error;
-    return data;
+  async bulkUpdateLeaveRequests(ids: string[], updates: Partial<LeaveRequest>) {
+    return this.serviceFactory.getLeaveRequestService().bulkUpdateLeaveRequests(ids, updates);
   }
 
   // Leave balance management
   async getLeaveBalance(userId: string, year: number) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_balances')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('year', year);
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeaveBalanceService().getLeaveBalance(userId, year);
+  }
+
+  async updateLeaveBalance(balance: Omit<LeaveBalance, 'id' | 'updated_at'>) {
+    return this.serviceFactory.getLeaveBalanceService().createLeaveBalance(balance);
   }
 
   // Leave policy management
   async getLeavePolicies() {
-    const { data, error } = await this.supabaseClient
-      .from('leave_policies')
-      .select('*')
-      .eq('is_active', true);
-    
-    if (error) throw error;
-    return data;
-  }
-
-  async updateLeaveBalance(balance: Omit<LeaveBalance, 'id' | 'updated_at'>) {
-    const { data, error } = await this.supabaseClient
-      .from('leave_balances')
-      .upsert(balance)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getLeavePolicyService().getActivePolicies();
   }
 
   // Department and team management
   async getDepartments() {
-    const { data, error } = await this.supabaseClient
-      .from('departments')
-      .select('*')
-      .eq('is_active', true)
-      .order('name');
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getDepartmentService().getAllDepartments({ is_active: true });
   }
 
   async getTeamsByDepartment(departmentId: string) {
-    const { data, error } = await this.supabaseClient
-      .from('teams')
-      .select('*')
-      .eq('department_id', departmentId)
-      .eq('is_active', true)
-      .order('name');
-    
-    if (error) throw error;
-    return data;
-  }
-
-  async getAllUsers() {
-    const { data, error } = await this.supabaseClient
-      .from('users')
-      .select('*')
-      .eq('is_active', true)
-      .order('first_name');
-    
-    if (error) throw error;
-    return data;
-  }
-
-  async getTeamMembers(managerId: string) {
-    const { data, error } = await this.supabaseClient
-      .from('users')
-      .select('*')
-      .eq('manager_id', managerId)
-      .eq('is_active', true)
-      .order('first_name');
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getTeamService().getTeamsByDepartment(departmentId);
   }
 
   async getManagerTeamStats(managerId: string) {
-    // Get team members count
-    const { data: teamMembers, error: membersError } = await this.supabaseClient
-      .from('users')
-      .select('id')
-      .eq('manager_id', managerId)
-      .eq('is_active', true);
-
-    if (membersError) throw membersError;
-
-    // Get pending requests count for team
-    const { data: pendingRequests, error: pendingError } = await this.supabaseClient
-      .from('leave_requests')
-      .select('id, users!leave_requests_user_id_fkey(manager_id)')
-      .eq('status', 'pending')
-      .eq('users.manager_id', managerId);
-
-    if (pendingError) throw pendingError;
-
-    // Get approved requests this month for team
-    const currentMonth = new Date();
-    const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-    const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-
-    const { data: monthlyApproved, error: monthlyError } = await this.supabaseClient
-      .from('leave_requests')
-      .select('id, users!leave_requests_user_id_fkey(manager_id)')
-      .eq('status', 'approved')
-      .eq('users.manager_id', managerId)
-      .gte('approved_at', startOfMonth.toISOString())
-      .lte('approved_at', endOfMonth.toISOString());
-
-    if (monthlyError) throw monthlyError;
-
-    return {
-      teamMembersCount: teamMembers?.length || 0,
-      pendingRequestsCount: pendingRequests?.length || 0,
-      monthlyApprovedCount: monthlyApproved?.length || 0
-    };
+    return this.serviceFactory.getUserService().getManagerTeamStats(managerId);
   }
 
   // Notification management
   async createNotification(notification: Omit<Notification, 'id' | 'created_at'>) {
-    const { data, error } = await this.supabaseClient
-      .from('notifications')
-      .insert(notification)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getNotificationService().createNotification(notification);
   }
 
-  async getNotificationsByUser(userId: string, limit = 50) {
-    const { data, error } = await this.supabaseClient
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    
-    if (error) throw error;
-    return data;
+  async getNotificationsByUser(userId: string) {
+    return this.serviceFactory.getNotificationService().getNotificationsByUser(userId);
   }
 
   async markNotificationAsRead(id: string) {
-    const { data, error } = await this.supabaseClient
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getNotificationService().markNotificationAsRead(id);
   }
 
   // Calendar events
-  async getCalendarEvents(
-    startDate: Date,
-    endDate: Date,
-    userId?: string,
-    departmentId?: string
-  ) {
-    let query = supabase
-      .from('calendar_events')
-      .select('*')
-      .gte('start_date', startDate.toISOString())
-      .lte('end_date', endDate.toISOString());
-
-    if (userId) {
-      query = query.eq('user_id', userId);
-    }
-
-    if (departmentId) {
-      query = query.eq('department_id', departmentId);
-    }
-
-    const { data, error } = await query.order('start_date');
-    
-    if (error) throw error;
-    return data;
+  async getCalendarEvents(startDate: Date, endDate: Date, userId?: string, departmentId?: string) {
+    return this.serviceFactory.getCalendarEventService().getCalendarEventsByDateRange(startDate, endDate, userId, departmentId);
   }
 
   // Audit logging
   async createAuditLog(log: Omit<AuditLog, 'id' | 'created_at'>) {
-    const { data, error } = await this.supabaseClient
-      .from('audit_logs')
-      .insert(log)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
+    return this.serviceFactory.getAuditLogService().createAuditLog(log);
   }
 
-  // Real-time subscriptions
+  // Real-time subscriptions (legacy implementation)
   subscribeToLeaveRequests(userId: string, callback: (payload: any) => void) {
     return this.supabaseClient
       .channel(`leave_requests_${userId}`)
