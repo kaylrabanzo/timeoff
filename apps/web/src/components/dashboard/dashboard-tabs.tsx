@@ -7,6 +7,7 @@ import { DashboardOverview } from './dashboard-overview'
 import { LeaveBalance, LeaveRequest, User } from '@timeoff/types'
 import Link from 'next/link'
 import { Skeleton } from '../ui/skeleton'
+import { useRouter } from 'next/navigation'
 
 interface DashboardTabsProps {
   selectedTab: string
@@ -43,18 +44,24 @@ export function DashboardTabs({
   allRequestsLoading
 }: DashboardTabsProps) {
   const isManager = user.role === 'supervisor' || user.role === 'admin' || user.role === 'hr'
-
+  const router = useRouter()
   return (
     <Tabs defaultValue={selectedTab} className='mb-8'>
       <TabsList className="grid grid-cols-3 lg:w-[320px]">
-        <TabsTrigger value="overview" className='p-0 w-full'>
-          <Link href="/dashboard" className='w-full p-2'>Overview</Link>
+        <TabsTrigger value="overview" className='w-full' onClick={() => {
+          router.push('/dashboard')
+        }}>
+          <Link href="/dashboard" className='w-full'>Overview</Link>
         </TabsTrigger>
-        <TabsTrigger value="requests" className='p-0 w-full'>
-          <Link href="/dashboard/requests" className='w-full p-2'>Requests</Link>
+        <TabsTrigger value="requests" className='w-full' onClick={() => {
+          router.push('/dashboard/requests')
+        }}>
+          <Link href="/dashboard/requests" className='w-full'>Requests</Link>
         </TabsTrigger>
-        <TabsTrigger value="calendar" className='p-0 w-full'>
-          <Link href="/dashboard/calendar" className='w-full p-2'>Calendar</Link>
+        <TabsTrigger value="calendar" className='w-full' onClick={() => {
+          router.push('/dashboard/calendar')
+        }}>
+          <Link href="/dashboard/calendar" className='w-full'>Calendar</Link>
         </TabsTrigger>
       </TabsList>
 

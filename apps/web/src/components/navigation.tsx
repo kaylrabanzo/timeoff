@@ -64,17 +64,6 @@ export function Navigation() {
                     Team Calendar
                   </Button>
                 </Link>
-
-                <Link href="/examples">
-                  <Button 
-                    variant={pathname === '/examples' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="flex items-center gap-2"
-                  >
-                    <Palette className="h-4 w-4" />
-                    Components
-                  </Button>
-                </Link>
                 
               </div>
             )}

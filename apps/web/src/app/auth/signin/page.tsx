@@ -260,7 +260,7 @@ export default function SignInPage() {
                 )}
 
                 {/* Password Strength Indicator */}
-                {formData.password && (
+                {/* {formData.password && (
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-gray-600">Password strength</span>
@@ -278,7 +278,7 @@ export default function SignInPage() {
                       ))}
                     </div>
                   </div>
-                )}
+                )} */}
               </div>
 
               <div className="flex items-center justify-between">
